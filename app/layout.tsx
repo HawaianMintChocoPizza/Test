@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Person Explorer",
-  description: "Search and explore summarized information about famous people.",
+  title: "WatchPick - 내 손안의 OTT 콘텐츠 추천 알고리즘",
+  description: "선호하는 장르, 플랫폼, 오늘 보고 싶은 분위기를 선택하고 당신만을 위한 개인화된 OTT 영화 및 드라마 추천 결과를 확인하세요.",
 };
 
 export default function RootLayout({
