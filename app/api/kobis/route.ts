@@ -112,6 +112,7 @@ export async function GET(request: Request) {
 
       // TMDb 영화/TV 포스터 및 줄거리, 인물 정보 연동 추가 (폴백 지원)
       let posterUrl = "";
+      let backdropUrl = "";
       let plotText = "";
       let credits: { name: string; role: string; avatarUrl: string }[] = [];
 
@@ -143,6 +144,9 @@ export async function GET(request: Request) {
             if (result) {
               if (result.poster_path) {
                 posterUrl = `https://image.tmdb.org/t/p/w500${result.poster_path}`;
+              }
+              if (result.backdrop_path) {
+                backdropUrl = `https://image.tmdb.org/t/p/original${result.backdrop_path}`;
               }
               if (result.overview) {
                 plotText = result.overview;
@@ -201,6 +205,7 @@ export async function GET(request: Request) {
         ...data,
         tmdb: {
           posterUrl,
+          backdropUrl,
           plotText,
           credits
         }

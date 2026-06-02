@@ -29,6 +29,7 @@ export interface Content {
   cardFooterTag?: { text: string; iconType?: string };
   baseScore?: number;
   tasteExplanation?: string;
+  backdropUrl?: string;
 }
 
 export const contents: Content[] = [

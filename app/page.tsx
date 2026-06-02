@@ -36,11 +36,18 @@ type ActiveCategory = "movie" | "series" | "anime" | "documentary";
 
 export default function WatchPickPage() {
   // --- Core States ---
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(true);
+  const [viewMode, setViewMode] = useState<'netflix' | 'watchpick'>('netflix');
   const [viewingLogin, setViewingLogin] = useState<boolean>(false); // New state to control showing login screen
   const [currentTab, setCurrentTab] = useState<SidebarTab>("home");
   const [activeCategory, setActiveCategory] = useState<ActiveCategory>("movie");
   const [searchQuery, setSearchQuery] = useState<string>("");
+  
+  // --- Netflix Home API States ---
+  const [netflixBanner, setNetflixBanner] = useState<Content | null>(null);
+  const [netflixTrending, setNetflixTrending] = useState<Content[]>([]);
+  const [netflixTop10, setNetflixTop10] = useState<Content[]>([]);
+  const [netflixWatching, setNetflixWatching] = useState<Content[]>([]);
   
   // --- Sidebar Search ---
   const [sidebarSearchQuery, setSidebarSearchQuery] = useState<string>("");
@@ -114,6 +121,134 @@ export default function WatchPickPage() {
     } catch (e) {
       console.error("Failed to load local storage state:", e);
     }
+  }, []);
+
+  // --- Netflix Clone Data Loading Effect ---
+  useEffect(() => {
+    const fetchNetflixHomeData = async () => {
+      // 1. 배너: 오징어 게임 (기본)
+      try {
+        const squidGameLocal = contents.find(c => c.id === "drama-squidgame");
+        if (squidGameLocal) {
+          const res = await fetch(`/api/kobis?action=detail&title=${encodeURIComponent(squidGameLocal.title)}&type=drama&releaseYear=2021`);
+          if (res.ok) {
+            const data = await res.json();
+            const tmdbPlot = data?.tmdb?.plotText;
+            const tmdbPoster = data?.tmdb?.posterUrl;
+            const tmdbBackdrop = data?.tmdb?.backdropUrl;
+            const tmdbCredits = data?.tmdb?.credits;
+            setNetflixBanner({
+              ...squidGameLocal,
+              summary: tmdbPlot || squidGameLocal.summary,
+              thumbnail: tmdbPoster || squidGameLocal.thumbnail,
+              backdropUrl: tmdbBackdrop || "https://image.tmdb.org/t/p/original/yQGaui0bQ5Ai3KIFBB45nTeIqad.jpg",
+              crew: tmdbCredits || squidGameLocal.crew
+            });
+          } else {
+            setNetflixBanner(squidGameLocal);
+          }
+        }
+      } catch (e) {
+        console.error("Failed to load Netflix banner:", e);
+        setNetflixBanner(contents.find(c => c.id === "drama-squidgame") || null);
+      }
+
+      // 2. 지금 뜨는 콘텐츠: TMDb 인기 콘텐츠 혹은 로컬 인기 콘텐츠 5종
+      try {
+        const trendingList = ["기생충", "서울의 봄", "헤어질 결심", "극한직업", "범죄도시 4"];
+        const loadedTrending = await Promise.all(
+          trendingList.map(async (title) => {
+            const localMovie = contents.find(c => c.title === title);
+            if (!localMovie) return null;
+            try {
+              const res = await fetch(`/api/kobis?action=detail&title=${encodeURIComponent(title)}&type=movie&releaseYear=${localMovie.releaseYear}`);
+              if (res.ok) {
+                const data = await res.json();
+                return {
+                  ...localMovie,
+                  summary: data?.tmdb?.plotText || localMovie.summary,
+                  thumbnail: data?.tmdb?.posterUrl || localMovie.thumbnail,
+                  backdropUrl: data?.tmdb?.backdropUrl || localMovie.backdropUrl,
+                  crew: data?.tmdb?.credits || localMovie.crew
+                };
+              }
+            } catch (err) {
+              console.error(`Failed to enrich trending ${title}:`, err);
+            }
+            return localMovie;
+          })
+        );
+        setNetflixTrending(loadedTrending.filter((x): x is Content => x !== null));
+      } catch (e) {
+        console.error("Failed to load Netflix trending list:", e);
+      }
+
+      // 3. 오늘 한국의 TOP 10 콘텐츠: 로컬 TOP 3작품 ("파묘", "무빙", "기생충")을 실시간 맵핑
+      try {
+        const top10Titles = [
+          { title: "파묘", type: "movie", year: 2024 },
+          { title: "무빙", type: "drama", year: 2023 },
+          { title: "기생충", type: "movie", year: 2019 }
+        ];
+        const loadedTop10 = await Promise.all(
+          top10Titles.map(async (item) => {
+            const localMovie = contents.find(c => c.title === item.title);
+            if (!localMovie) return null;
+            try {
+              const res = await fetch(`/api/kobis?action=detail&title=${encodeURIComponent(item.title)}&type=${item.type}&releaseYear=${item.year}`);
+              if (res.ok) {
+                const data = await res.json();
+                return {
+                  ...localMovie,
+                  summary: data?.tmdb?.plotText || localMovie.summary,
+                  thumbnail: data?.tmdb?.posterUrl || localMovie.thumbnail,
+                  backdropUrl: data?.tmdb?.backdropUrl || localMovie.backdropUrl,
+                  crew: data?.tmdb?.credits || localMovie.crew
+                };
+              }
+            } catch (err) {
+              console.error(`Failed to enrich top10 ${item.title}:`, err);
+            }
+            return localMovie;
+          })
+        );
+        setNetflixTop10(loadedTop10.filter((x): x is Content => x !== null));
+      } catch (e) {
+        console.error("Failed to load Netflix TOP 10:", e);
+      }
+
+      // 4. 시청 중인 콘텐츠: "무빙"과 "파묘"를 진행 바와 함께 노출
+      try {
+        const watchingList = ["무빙", "파묘"];
+        const loadedWatching = await Promise.all(
+          watchingList.map(async (title) => {
+            const localMovie = contents.find(c => c.title === title);
+            if (!localMovie) return null;
+            try {
+              const res = await fetch(`/api/kobis?action=detail&title=${encodeURIComponent(title)}&type=${localMovie.type}&releaseYear=${localMovie.releaseYear}`);
+              if (res.ok) {
+                const data = await res.json();
+                return {
+                  ...localMovie,
+                  summary: data?.tmdb?.plotText || localMovie.summary,
+                  thumbnail: data?.tmdb?.posterUrl || localMovie.thumbnail,
+                  backdropUrl: data?.tmdb?.backdropUrl || localMovie.backdropUrl,
+                  crew: data?.tmdb?.credits || localMovie.crew
+                };
+              }
+            } catch (err) {
+              console.error(`Failed to enrich watching ${title}:`, err);
+            }
+            return localMovie;
+          })
+        );
+        setNetflixWatching(loadedWatching.filter((x): x is Content => x !== null));
+      } catch (e) {
+        console.error("Failed to load Netflix watching list:", e);
+      }
+    };
+
+    fetchNetflixHomeData();
   }, []);
 
   // --- Sync KOBIS dynamic contents to localStorage ---
@@ -212,6 +347,7 @@ export default function WatchPickPage() {
 
           // TMDb API 데이터 연동 (포스터 URL 및 상세 줄거리)
           const tmdbPoster = data?.tmdb?.posterUrl;
+          const tmdbBackdrop = data?.tmdb?.backdropUrl;
           const tmdbPlot = data?.tmdb?.plotText;
 
           const thumbnail = tmdbPoster || basicInfo.thumbnail;
@@ -230,6 +366,7 @@ export default function WatchPickPage() {
             crew,
             summary,
             thumbnail,
+            backdropUrl: tmdbBackdrop || basicInfo.backdropUrl,
             originalTitle: movieInfo.movieNmEn,
             tasteExplanation: "KOBIS & TMDb 실시간 연동 작품"
           };
@@ -283,6 +420,7 @@ export default function WatchPickPage() {
 
           // TMDb API 데이터 연동 (포스터 URL 및 상세 줄거리)
           const tmdbPoster = data?.tmdb?.posterUrl;
+          const tmdbBackdrop = data?.tmdb?.backdropUrl;
           const tmdbPlot = data?.tmdb?.plotText;
 
           const thumbnail = tmdbPoster || basicInfo.thumbnail;
@@ -301,6 +439,7 @@ export default function WatchPickPage() {
             crew,
             summary,
             thumbnail,
+            backdropUrl: tmdbBackdrop || basicInfo.backdropUrl,
             originalTitle: basicInfo.originalTitle || basicInfo.title,
             tasteExplanation: basicInfo.tasteExplanation || "TMDb 실시간 연동 작품"
           };
@@ -694,7 +833,7 @@ export default function WatchPickPage() {
       {/* ======================================================== */}
       {/* LEFT SIDEBAR (MOCKUP 1 & 3 DESIGN)                        */}
       {/* ======================================================== */}
-      {!viewingLogin && (
+      {!viewingLogin && viewMode === 'watchpick' && (
         <aside className="sidebar-container hidden md:flex flex-col justify-between py-6 px-4">
           
           <div className="space-y-6">
@@ -922,7 +1061,7 @@ export default function WatchPickPage() {
       {/* ======================================================== */}
       {/* MAIN VIEW CONTROLLER                                    */}
       {/* ======================================================== */}
-      <div className={`flex-1 flex flex-col min-h-screen ${!viewingLogin ? "md:pl-[250px]" : ""}`}>
+      <div className={`flex-1 flex flex-col min-h-screen ${(!viewingLogin && viewMode === 'watchpick') ? "md:pl-[250px]" : ""}`}>
         
         {/* ======================================================== */}
         {/* LOGIN / ACCOUNT CONNECTION VIEW (MOCKUP 2 DESIGN)         */}
@@ -1168,14 +1307,20 @@ export default function WatchPickPage() {
         {/* ======================================================== */}
         {/* LOGGED IN / DEFAULT DASHBOARD VIEWS                       */}
         {/* ======================================================== */}
-        {!viewingLogin && !activeMovie && (
+        {!viewingLogin && !activeMovie && viewMode === 'watchpick' && (
           <div className="flex-1 flex flex-col animate-fadeIn">
             
             {/* Top horizontal nav (tabs & profile indicator) */}
-            <header className="h-[70px] border-b border-white/5 px-6 md:px-12 flex items-center justify-between sticky top-0 bg-[#08090d]/90 backdrop-blur-md z-20">
+            <header className="h-[70px] border-b border-white/5 px-6 md:px-12 flex items-center justify-between sticky top-0 bg-[#141414]/90 backdrop-blur-md z-20">
               
               {/* Category tabs */}
               <div className="flex items-center gap-6 sm:gap-10 text-sm font-bold text-slate-400">
+                <button
+                  onClick={() => setViewMode('netflix')}
+                  className="pb-1 text-primary hover:text-red-400 font-extrabold cursor-pointer border-b-2 border-transparent mr-4 flex items-center gap-1.5 shrink-0"
+                >
+                  <span>←</span> <span>넷플릭스 홈</span>
+                </button>
                 {[
                   { key: "movie", label: "영화" },
                   { key: "series", label: "시리즈" },
@@ -1832,8 +1977,321 @@ export default function WatchPickPage() {
             )}
 
             {/* Recommendations Footer */}
-            <footer className="h-[60px] border-t border-white/5 flex items-center justify-center text-[10px] text-slate-600 font-semibold mt-auto bg-[#08090d]">
+            <footer className="h-[60px] border-t border-white/5 flex items-center justify-center text-[10px] text-slate-600 font-semibold mt-auto bg-[#141414]">
               © 2026 취향저격. All rights reserved.
+            </footer>
+
+          </div>
+        )}
+
+        {/* ======================================================== */}
+        {/* NETFLIX CLONE HOME VIEW (MOCKUP 0 DESIGN)               */}
+        {/* ======================================================== */}
+        {!viewingLogin && !activeMovie && viewMode === 'netflix' && (
+          <div className="flex-1 flex flex-col animate-fadeIn bg-[#141414] text-white">
+            
+            {/* Netflix Header */}
+            <header className="h-[68px] px-6 md:px-12 flex items-center justify-between sticky top-0 bg-[#141414]/90 backdrop-blur-md z-30 transition-all duration-300">
+              <div className="flex items-center gap-6 sm:gap-10">
+                {/* Netflix Red Text Logo */}
+                <h1 className="text-2xl font-black tracking-tighter text-[#E50914] cursor-pointer select-none" onClick={() => setViewMode('netflix')}>
+                  NETFLIX
+                </h1>
+                
+                {/* Menus */}
+                <nav className="hidden lg:flex items-center gap-5 text-[12px] font-medium text-slate-300">
+                  <button className="hover:text-slate-400 cursor-pointer text-white font-bold">홈</button>
+                  <button className="hover:text-slate-400 cursor-pointer">시리즈</button>
+                  <button className="hover:text-slate-400 cursor-pointer">영화</button>
+                  <button className="hover:text-slate-400 cursor-pointer">NEW! 요즘 대세 콘텐츠</button>
+                  <button className="hover:text-slate-400 cursor-pointer">내가 찜한 리스트</button>
+                  
+                  {/* Highlighted Recommendation Menu */}
+                  <button 
+                    onClick={() => { setViewMode('watchpick'); setCurrentTab('home'); }} 
+                    className="text-[#E50914] font-black border border-[#E50914]/40 bg-[#E50914]/5 hover:bg-[#E50914]/15 px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 animate-pulse"
+                  >
+                    <span>✨</span>
+                    <span>새로운 컨텐츠 추천받기</span>
+                  </button>
+                </nav>
+              </div>
+
+              {/* Header Right */}
+              <div className="flex items-center gap-5">
+                {/* Search, Kids, Bell, Profile Icon */}
+                <button className="hover:text-slate-300 cursor-pointer">
+                  <Search className="w-4 h-4 text-white" />
+                </button>
+                <span className="text-[12px] text-slate-300 cursor-pointer hover:underline hidden sm:inline">키즈</span>
+                <button className="hover:text-slate-300 cursor-pointer relative">
+                  <Bell className="w-4 h-4 text-white" />
+                  <span className="absolute -top-1 -right-1 w-1.5 h-1.5 bg-primary rounded-full" />
+                </button>
+                
+                {/* Profile Box */}
+                <div 
+                  onClick={() => { setViewMode('watchpick'); setCurrentTab('settings'); }}
+                  className="flex items-center gap-2 cursor-pointer group"
+                  title="내 프로필/설정 이동"
+                >
+                  <div className="w-8 h-8 rounded bg-[#1c1c1c] border border-white/10 overflow-hidden flex items-center justify-center shadow-lg font-bold text-xs text-primary group-hover:border-primary transition-colors">
+                    CS
+                  </div>
+                </div>
+              </div>
+            </header>
+
+            {/* Mobile Recommendation Banner button */}
+            <div className="lg:hidden px-6 py-2 bg-gradient-to-r from-red-950/40 to-transparent border-y border-white/5 flex justify-between items-center text-xs">
+              <span className="font-bold text-slate-300">내 평점 AI 취향 분석을 받아보세요!</span>
+              <button 
+                onClick={() => { setViewMode('watchpick'); setCurrentTab('home'); }} 
+                className="bg-primary px-3 py-1.5 rounded font-black text-white active:scale-95 transition-all cursor-pointer"
+              >
+                추천받기
+              </button>
+            </div>
+
+            {/* Netflix Main Billboard Banner */}
+            {netflixBanner && (
+              <section className="relative w-full aspect-[16/9] md:h-[65vh] lg:h-[75vh] xl:h-[80vh] min-h-[400px] overflow-hidden select-none">
+                {/* Billboard backdrop background */}
+                <div className="absolute inset-0 bg-slate-950">
+                  <img 
+                    src={netflixBanner.backdropUrl || netflixBanner.thumbnail} 
+                    alt={netflixBanner.title} 
+                    className="w-full h-full object-cover object-center opacity-85 transition-opacity duration-700" 
+                  />
+                  {/* Backdrop shading overlay */}
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#141414] via-[#141414]/30 to-black/50" />
+                  <div className="absolute inset-0 bg-gradient-to-r from-[#141414]/70 via-[#141414]/10 to-transparent" />
+                </div>
+
+                {/* Banner Content Panel */}
+                <div className="absolute bottom-[10%] left-6 md:left-12 max-w-[600px] space-y-4 z-10 animate-slideUp">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 bg-[#E50914] rounded-full animate-ping" />
+                    <span className="text-[10px] md:text-xs font-black tracking-widest text-[#E50914] uppercase drop-shadow">
+                      STREAMFLIX 오리지널
+                    </span>
+                  </div>
+                  
+                  <h2 className="text-4xl md:text-6xl font-black tracking-tight text-white drop-shadow-md">
+                    {netflixBanner.title}
+                  </h2>
+                  
+                  <p className="text-xs md:text-sm text-slate-200 leading-relaxed font-semibold drop-shadow-sm max-h-[100px] overflow-hidden line-clamp-3">
+                    {netflixBanner.summary}
+                  </p>
+
+                  <div className="flex items-center gap-3 pt-2">
+                    {/* Play & Info Buttons */}
+                    <button 
+                      onClick={() => triggerToast(`"${netflixBanner.title}" 감상을 시작합니다.`)}
+                      className="bg-white hover:bg-slate-200 active:scale-98 text-black px-6 py-2.5 rounded font-black text-xs md:text-sm flex items-center gap-2 cursor-pointer shadow-md transition-all"
+                    >
+                      <Play className="w-4 h-4 fill-current text-black" />
+                      <span>재생</span>
+                    </button>
+                    <button 
+                      onClick={() => openMovieDetail(netflixBanner)}
+                      className="bg-slate-500/40 hover:bg-slate-500/60 active:scale-98 text-white px-6 py-2.5 rounded font-bold text-xs md:text-sm flex items-center gap-2 cursor-pointer shadow-md border border-white/10 backdrop-blur-sm transition-all"
+                    >
+                      <Info className="w-4 h-4 text-white" />
+                      <span>상세 정보</span>
+                    </button>
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {/* Netflix Content Rows Container */}
+            <div className="px-6 md:px-12 py-8 space-y-12 relative z-20 -mt-16 md:-mt-24 lg:-mt-32">
+              
+              {/* Row 1: 지금 뜨는 콘텐츠 */}
+              <section className="space-y-3">
+                <h3 className="text-sm md:text-lg font-black tracking-wide text-white">지금 뜨는 콘텐츠</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
+                  {netflixTrending.map((movie) => (
+                    <div 
+                      key={movie.id} 
+                      onClick={() => openMovieDetail(movie)}
+                      className="group cursor-pointer relative aspect-[2/3] rounded-md overflow-hidden bg-slate-900 border border-white/5 hover:border-primary/50 transition-all duration-300 hover:scale-105 hover:shadow-2xl shadow-md"
+                    >
+                      <img src={movie.thumbnail} alt={movie.title} className="w-full h-full object-cover group-hover:opacity-90 transition-opacity" />
+                      {/* title display on hover */}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-3">
+                        <span className="text-xs font-black text-white truncate">{movie.title}</span>
+                        <span className="text-[9px] text-[#ff4d58] font-bold mt-1">⭐️ {movie.rating || 4.7}</span>
+                      </div>
+                    </div>
+                  ))}
+                  {netflixTrending.length === 0 && (
+                    Array.from({ length: 5 }).map((_, i) => (
+                      <div key={i} className="aspect-[2/3] rounded-md bg-white/5 animate-pulse" />
+                    ))
+                  )}
+                </div>
+              </section>
+
+              {/* Row 2: 오늘 한국의 TOP 10 콘텐츠 */}
+              <section className="space-y-3">
+                <h3 className="text-sm md:text-lg font-black tracking-wide text-white">오늘 한국의 TOP 10 콘텐츠</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {netflixTop10.slice(0, 3).map((movie, index) => (
+                    <div 
+                      key={movie.id}
+                      onClick={() => openMovieDetail(movie)}
+                      className="group cursor-pointer relative flex items-center h-[160px] md:h-[200px] bg-slate-950/20 border border-white/5 hover:border-primary/30 rounded-xl overflow-hidden p-4 gap-4 transition-all hover:bg-slate-950/40"
+                    >
+                      {/* Big rank number */}
+                      <div className="text-6xl md:text-8xl font-black text-transparent select-none drop-shadow-[0_2px_4px_rgba(255,255,255,0.08)] leading-none shrink-0" style={{ WebkitTextStroke: "2px rgba(255,255,255,0.25)" }}>
+                        {index + 1}
+                      </div>
+
+                      {/* Poster Image */}
+                      <div className="h-full aspect-[2/3] bg-slate-900 rounded-lg overflow-hidden border border-white/10 group-hover:scale-102 transition-transform shadow-lg shrink-0">
+                        <img src={movie.thumbnail} alt={movie.title} className="w-full h-full object-cover" />
+                      </div>
+
+                      {/* Content Description */}
+                      <div className="min-w-0 flex-1 flex flex-col justify-center py-2 space-y-1">
+                        <h4 className="text-xs sm:text-sm font-bold text-white group-hover:text-primary transition-colors truncate">
+                          {movie.title}
+                        </h4>
+                        <p className="text-[10px] text-slate-400 font-semibold">
+                          {movie.genres.slice(0, 2).join(", ")} • {movie.releaseYear}
+                        </p>
+                        <p className="text-[10px] text-slate-500 font-medium line-clamp-3 leading-relaxed mt-1">
+                          {movie.summary}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                  {netflixTop10.length === 0 && (
+                    Array.from({ length: 3 }).map((_, i) => (
+                      <div key={i} className="h-[200px] rounded-xl bg-white/5 animate-pulse" />
+                    ))
+                  )}
+                </div>
+              </section>
+
+              {/* Row 3: 시청 중인 콘텐츠 */}
+              <section className="space-y-3">
+                <h3 className="text-sm md:text-lg font-black tracking-wide text-white">시청 중인 콘텐츠</h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                  {netflixWatching.slice(0, 2).map((movie, index) => {
+                    const progressVal = index === 0 ? 80 : 35; // Mock progress percentages (e.g. Moving 80%, Exhuma 35%)
+                    const progressText = index === 0 ? "시즌 1: 4화" : "파트 2";
+                    return (
+                      <div 
+                        key={movie.id}
+                        className="group bg-slate-950/40 border border-white/5 rounded-xl overflow-hidden hover:border-white/15 transition-all shadow-md"
+                      >
+                        {/* Horizontal Poster container */}
+                        <div 
+                          onClick={() => openMovieDetail(movie)}
+                          className="relative aspect-[16/10] w-full bg-slate-900 cursor-pointer overflow-hidden"
+                        >
+                          <img src={movie.backdropUrl || movie.thumbnail} alt={movie.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                          <div className="absolute inset-0 bg-black/20" />
+                          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="w-10 h-10 rounded-full bg-white/95 flex items-center justify-center shadow-lg transform scale-90 group-hover:scale-100 transition-transform">
+                              <Play className="w-4 h-4 fill-current text-black ml-0.5" />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Progress Bar & Info */}
+                        <div className="p-4 space-y-2">
+                          <div className="flex justify-between items-start gap-2">
+                            <div>
+                              <span 
+                                onClick={() => openMovieDetail(movie)}
+                                className="text-xs font-bold text-white hover:text-primary cursor-pointer truncate block"
+                              >
+                                {movie.title}
+                              </span>
+                              <span className="text-[10px] text-slate-500 font-semibold block mt-0.5">{progressText}</span>
+                            </div>
+                            <button 
+                              onClick={() => openMovieDetail(movie)}
+                              className="p-1 rounded-full hover:bg-white/5 text-slate-400 hover:text-white transition-colors"
+                              title="상세 정보"
+                            >
+                              <Info className="w-4 h-4" />
+                            </button>
+                          </div>
+
+                          {/* Progress Line */}
+                          <div className="space-y-1">
+                            <div className="h-1 w-full bg-white/10 rounded-full overflow-hidden">
+                              <div className="h-full bg-primary rounded-full" style={{ width: `${progressVal}%` }} />
+                            </div>
+                            <span className="text-[9px] text-slate-500 font-bold block text-right">{progressVal}% 완료</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {netflixWatching.length === 0 && (
+                    Array.from({ length: 2 }).map((_, i) => (
+                      <div key={i} className="aspect-[16/10] rounded-xl bg-white/5 animate-pulse" />
+                    ))
+                  )}
+                </div>
+              </section>
+
+            </div>
+
+            {/* Netflix Footer */}
+            <footer className="bg-[#141414] text-slate-500 text-[11px] font-semibold pt-16 pb-10 border-t border-white/5">
+              <div className="max-w-[1000px] mx-auto px-6 space-y-8">
+                
+                {/* Social icons */}
+                <div className="flex items-center gap-6 text-slate-400 text-lg">
+                  <button className="hover:text-white transition-colors">🌐</button>
+                  <button className="hover:text-white transition-colors">💬</button>
+                  <button className="hover:text-white transition-colors">📷</button>
+                  <button className="hover:text-white transition-colors">🎥</button>
+                </div>
+
+                {/* Footer links grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-left leading-loose">
+                  <div className="flex flex-col">
+                    <button onClick={() => triggerToast("자막 및 음성")} className="hover:underline text-left cursor-pointer">자막 및 음성</button>
+                    <button onClick={() => triggerToast("미디어 센터")} className="hover:underline text-left cursor-pointer">미디어 센터</button>
+                    <button onClick={() => triggerToast("개인정보 처리방침")} className="hover:underline text-left cursor-pointer">개인정보 처리방침</button>
+                    <button onClick={() => triggerToast("문의 하기")} className="hover:underline text-left cursor-pointer">문의 하기</button>
+                  </div>
+                  <div className="flex flex-col">
+                    <button onClick={() => triggerToast("화면 해설")} className="hover:underline text-left cursor-pointer">화면 해설</button>
+                    <button onClick={() => triggerToast("투자 정보(IR)")} className="hover:underline text-left cursor-pointer">투자 정보(IR)</button>
+                    <button onClick={() => triggerToast("법적 고지")} className="hover:underline text-left cursor-pointer">법적 고지</button>
+                    <button onClick={() => triggerToast("속도 테스트")} className="hover:underline text-left cursor-pointer">속도 테스트</button>
+                  </div>
+                  <div className="flex flex-col">
+                    <button onClick={() => triggerToast("고객 센터")} className="hover:underline text-left cursor-pointer">고객 센터</button>
+                    <button onClick={() => triggerToast("입사 정보")} className="hover:underline text-left cursor-pointer">입사 정보</button>
+                    <button onClick={() => triggerToast("쿠키 설정")} className="hover:underline text-left cursor-pointer">쿠키 설정</button>
+                    <button onClick={() => triggerToast("법적 고지")} className="hover:underline text-left cursor-pointer">법적 고지</button>
+                  </div>
+                  <div className="flex flex-col">
+                    <button onClick={() => triggerToast("기프트카드")} className="hover:underline text-left cursor-pointer">기프트카드</button>
+                    <button onClick={() => triggerToast("이용 약관")} className="hover:underline text-left cursor-pointer">이용 약관</button>
+                    <button onClick={() => triggerToast("회사 정보")} className="hover:underline text-left cursor-pointer">회사 정보</button>
+                  </div>
+                </div>
+
+                {/* Copyright info */}
+                <div className="space-y-2 text-slate-600">
+                  <p>넷플릭스서비시스코리아 유한회사 | 대표: 레지날드 숀 톰슨 | 이메일 주소: korea@netflix.com</p>
+                  <p>주소: 서울특별시 종로구 우정국로 26, 템플턴스퀘어 10층 | 사업자등록번호: 165-87-00123</p>
+                  <p>© 2026 Netflix Entertainment. All rights reserved.</p>
+                </div>
+
+              </div>
             </footer>
 
           </div>

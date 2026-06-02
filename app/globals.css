@@ -1,20 +1,20 @@
 @import "tailwindcss";
 
 @theme {
-  --color-primary: #8a7df0; /* Main Purple accent */
-  --color-primary-hover: #7365e3;
-  --color-dark-bg: #08090d; /* Mockup deep dark navy/black background */
-  --color-surface-sidebar: #0f1017; /* Sidebar background */
-  --color-card-bg: #151622; /* Card background */
+  --color-primary: #E50914; /* Netflix Red accent */
+  --color-primary-hover: #B20710;
+  --color-dark-bg: #141414; /* Netflix deep dark black background */
+  --color-surface-sidebar: #181818; /* Sidebar background */
+  --color-card-bg: #1c1c1c; /* Card background */
   --color-border-color: rgba(255, 255, 255, 0.08);
 }
 
 :root {
-  --primary-purple: #8a7df0;
-  --primary-purple-hover: #7365e3;
-  --bg-dark: #08090d;
-  --sidebar-dark: #0f1017;
-  --card-dark: #151622;
+  --primary-purple: #E50914; /* Netflix Red mapped to existing variable */
+  --primary-purple-hover: #B20710;
+  --bg-dark: #141414;
+  --sidebar-dark: #181818;
+  --card-dark: #1c1c1c;
   --surface-border: rgba(255, 255, 255, 0.08);
   --text-dim: #9ca3af;
 }
@@ -45,7 +45,7 @@ body {
 
 /* Glassmorphism Panel */
 .glass-card {
-  background: rgba(21, 22, 34, 0.6);
+  background: rgba(28, 28, 28, 0.6);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--surface-border);
@@ -88,7 +88,7 @@ body {
 .sidebar-nav-link.active {
   color: #ffffff;
   background-color: var(--primary-purple);
-  box-shadow: 0 4px 15px rgba(138, 125, 240, 0.25);
+  box-shadow: 0 4px 15px rgba(229, 9, 20, 0.25);
 }
 
 /* Connection Status Block */
@@ -112,21 +112,21 @@ body {
 
 .movie-grid-card:hover {
   transform: translateY(-5px);
-  border-color: rgba(138, 125, 240, 0.35);
+  border-color: rgba(229, 9, 20, 0.35);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
 }
 
 /* Custom badges */
 .badge-match {
-  background-color: rgba(138, 125, 240, 0.15);
-  color: #aba1ff;
-  border: 1px solid rgba(138, 125, 240, 0.3);
+  background-color: rgba(229, 9, 20, 0.15);
+  color: #ff4d58;
+  border: 1px solid rgba(229, 9, 20, 0.3);
   font-weight: 700;
 }
 
 /* Login/Connection OTT Grid Item */
 .ott-connect-card {
-  background: rgba(21, 22, 34, 0.5);
+  background: rgba(28, 28, 28, 0.5);
   border: 1px solid var(--surface-border);
   border-radius: 18px;
   padding: 20px;
@@ -137,7 +137,7 @@ body {
 }
 
 .ott-connect-card:hover {
-  background: rgba(21, 22, 34, 0.8);
+  background: rgba(28, 28, 28, 0.8);
   border-color: rgba(255, 255, 255, 0.15);
 }
 
@@ -179,7 +179,7 @@ body {
   right: 0;
   width: 500px;
   height: 500px;
-  background: radial-gradient(circle, rgba(138, 125, 240, 0.08) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(229, 9, 20, 0.06) 0%, transparent 70%);
   pointer-events: none;
   z-index: 1;
 }
