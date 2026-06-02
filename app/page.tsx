@@ -29,7 +29,7 @@ import {
   Loader2
 } from "lucide-react";
 import { contents, Content } from "./data/contents";
-import { calculateRecommendations, RecommendationResult, UserEvaluation } from "./utils/recommendation";
+import { calculateRecommendations, RecommendationResult, UserEvaluation, CustomPreference } from "./utils/recommendation";
 
 type SidebarTab = "home" | "explore" | "saved" | "history" | "settings";
 type ActiveCategory = "movie" | "series" | "anime" | "documentary";
@@ -68,6 +68,23 @@ export default function WatchPickPage() {
   const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
   const [runtimePreference, setRuntimePreference] = useState<string>("all");
 
+  // --- Selected Tags and Custom Preferences for Algorithm Extra Points ---
+  const [selectedTags, setSelectedTags] = useState<Record<string, string[]>>({});
+  const [customPreferences, setCustomPreferences] = useState<CustomPreference[]>([]);
+
+  // --- KOBIS API States ---
+  const [dynamicContents, setDynamicContents] = useState<Content[]>(contents);
+  const [kobisSidebarResults, setKobisSidebarResults] = useState<Content[]>([]);
+  const [kobisExploreResults, setKobisExploreResults] = useState<Content[]>([]);
+  const [loadingKobisSidebar, setLoadingKobisSidebar] = useState<boolean>(false);
+  const [loadingKobisExplore, setLoadingKobisExplore] = useState<boolean>(false);
+  const [loadingMovieDetail, setLoadingMovieDetail] = useState<boolean>(false);
+
+  // --- Custom Preference Input States ---
+  const [newPrefType, setNewPrefType] = useState<'genre' | 'actor'>('genre');
+  const [newPrefValue, setNewPrefValue] = useState<string>("SF/판타지");
+  const [newPrefReason, setNewPrefReason] = useState<string>("");
+
   // --- Recalculating state ---
   const [recalculating, setRecalculating] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -80,16 +97,34 @@ export default function WatchPickPage() {
       const storedRatings = localStorage.getItem("wp_ratings");
       const storedReviews = localStorage.getItem("wp_reviews");
       const storedPlatforms = localStorage.getItem("wp_connectedPlatforms");
+      const storedTags = localStorage.getItem("wp_selectedTags");
+      const storedCustomPrefs = localStorage.getItem("wp_customPreferences");
+      const storedDynamicContents = localStorage.getItem("wp_dynamicContents");
 
       if (storedAuth === "true") setIsLoggedIn(true);
       if (storedSaved) setSavedContentIds(JSON.parse(storedSaved));
       if (storedRatings) setRatings(JSON.parse(storedRatings));
       if (storedReviews) setReviews(JSON.parse(storedReviews));
       if (storedPlatforms) setConnectedPlatforms(JSON.parse(storedPlatforms));
+      if (storedTags) setSelectedTags(JSON.parse(storedTags));
+      if (storedCustomPrefs) setCustomPreferences(JSON.parse(storedCustomPrefs));
+      if (storedDynamicContents) {
+        setDynamicContents([...contents, ...JSON.parse(storedDynamicContents)]);
+      }
     } catch (e) {
       console.error("Failed to load local storage state:", e);
     }
   }, []);
+
+  // --- Sync KOBIS dynamic contents to localStorage ---
+  useEffect(() => {
+    try {
+      const kobisOnly = dynamicContents.filter(c => c.id.startsWith("kobis-"));
+      localStorage.setItem("wp_dynamicContents", JSON.stringify(kobisOnly));
+    } catch (e) {
+      console.error("Failed to save dynamic contents to local storage:", e);
+    }
+  }, [dynamicContents]);
 
   // --- Trigger dynamic toast ---
   const triggerToast = (msg: string) => {
@@ -109,6 +144,227 @@ export default function WatchPickPage() {
     }
     setConnectedPlatforms(next);
     localStorage.setItem("wp_connectedPlatforms", JSON.stringify(next));
+  };
+
+  // --- KOBIS Detail Fetch & Map Handler ---
+  const handleOpenKobisDetail = async (movieCd: string, basicInfo: Content) => {
+    setLoadingMovieDetail(true);
+    try {
+      const url = movieCd 
+        ? `/api/kobis?action=detail&movieCd=${movieCd}`
+        : `/api/kobis?action=detail&title=${encodeURIComponent(basicInfo.title)}&type=${basicInfo.type}&releaseYear=${basicInfo.releaseYear}`;
+      const response = await fetch(url);
+      if (response.ok) {
+        const data = await response.json();
+        const movieInfo = data?.movieInfoResult?.movieInfo;
+        
+        // TMDb 크레딧(배우진/제작진 실제 사진 및 배역) 맵핑 적용
+        const tmdbCredits = data?.tmdb?.credits;
+        
+        if (movieInfo) {
+          const genres = movieInfo.genres && movieInfo.genres.length > 0 
+            ? movieInfo.genres.map((g: any) => g.genreNm) 
+            : basicInfo.genres;
+          const director = movieInfo.directors && movieInfo.directors.length > 0 
+            ? movieInfo.directors[0].peopleNm 
+            : basicInfo.director;
+          const cast = movieInfo.actors ? movieInfo.actors.slice(0, 5).map((a: any) => a.peopleNm) : [];
+          const runtime = movieInfo.showTm ? Number(movieInfo.showTm) : 120;
+          const releaseYear = movieInfo.openDt && movieInfo.openDt.length >= 4 
+            ? Number(movieInfo.openDt.substring(0, 4)) 
+            : (movieInfo.prdtYear ? Number(movieInfo.prdtYear) : basicInfo.releaseYear);
+          const ageRating = movieInfo.audits && movieInfo.audits.length > 0 
+            ? movieInfo.audits[0].watchGradeNm 
+            : "15세 관람가";
+          const country = movieInfo.nations && movieInfo.nations.length > 0 
+            ? movieInfo.nations[0].nationNm 
+            : "대한민국";
+          const distributor = movieInfo.companys && movieInfo.companys.length > 0 
+            ? movieInfo.companys[0].companyNm 
+            : "영화진흥위원회";
+          
+          let crew: { name: string; role: string; avatarUrl: string }[] = [];
+          if (tmdbCredits && tmdbCredits.length > 0) {
+            crew = tmdbCredits;
+          } else {
+            // 폴백: KOBIS 데이터 기반으로 Unsplash 아바타 적용
+            if (director && director !== "알 수 없음") {
+              crew.push({ 
+                name: director, 
+                role: "감독", 
+                avatarUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=120&h=120&q=80" 
+              });
+            }
+            cast.forEach((actorName: string) => {
+              crew.push({
+                name: actorName,
+                role: `출연 배우`,
+                avatarUrl: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=120&h=120&q=80"
+              });
+            });
+          }
+
+          const tmdbDirector = tmdbCredits?.find((c: any) => c.role === "감독")?.name;
+          const tmdbCast = tmdbCredits?.filter((c: any) => c.role !== "감독").map((c: any) => c.name) || [];
+
+          const finalDirector = tmdbDirector || director;
+          const finalCast = tmdbCast.length > 0 ? tmdbCast : cast;
+
+          // TMDb API 데이터 연동 (포스터 URL 및 상세 줄거리)
+          const tmdbPoster = data?.tmdb?.posterUrl;
+          const tmdbPlot = data?.tmdb?.plotText;
+
+          const thumbnail = tmdbPoster || basicInfo.thumbnail;
+          const summary = tmdbPlot || `${movieInfo.movieNm}(${movieInfo.movieNmEn || ''})은 ${country}에서 제작된 ${releaseYear}년도 작품입니다. 장르는 ${genres.join(', ')}이며, 러닝타임은 ${runtime}분입니다.`;
+
+          const richContent: Content = {
+            ...basicInfo,
+            genres,
+            director: finalDirector,
+            cast: finalCast,
+            runtime,
+            releaseYear,
+            ageRating,
+            country,
+            distributor,
+            crew,
+            summary,
+            thumbnail,
+            originalTitle: movieInfo.movieNmEn,
+            tasteExplanation: "KOBIS & TMDb 실시간 연동 작품"
+          };
+
+          // Add/update dynamic contents list
+          setDynamicContents(prev => {
+            if (prev.some(c => c.id === richContent.id)) {
+              return prev.map(c => c.id === richContent.id ? richContent : c);
+            }
+            return [...prev, richContent];
+          });
+
+          setActiveMovie(richContent);
+        } else {
+          // 로컬 영화 정보인 경우 (KOBIS 정보 없음, 오직 TMDb 정보만 있는 경우)
+          const genres = basicInfo.genres;
+          const director = basicInfo.director;
+          const cast = basicInfo.cast;
+          const runtime = basicInfo.runtime;
+          const releaseYear = basicInfo.releaseYear;
+          const ageRating = basicInfo.ageRating || "15세 관람가";
+          const country = basicInfo.country || "대한민국";
+          const distributor = basicInfo.distributor || "N/A";
+
+          let crew: { name: string; role: string; avatarUrl: string }[] = [];
+          if (tmdbCredits && tmdbCredits.length > 0) {
+            crew = tmdbCredits;
+          } else {
+            // 폴백: 로컬 데이터 기반으로 Unsplash 아바타 적용
+            if (director && director !== "알 수 없음") {
+              crew.push({ 
+                name: director, 
+                role: "감독", 
+                avatarUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=120&h=120&q=80" 
+              });
+            }
+            cast.forEach((actorName: string) => {
+              crew.push({
+                name: actorName,
+                role: `출연 배우`,
+                avatarUrl: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=120&h=120&q=80"
+              });
+            });
+          }
+
+          const tmdbDirector = tmdbCredits?.find((c: any) => c.role === "감독")?.name;
+          const tmdbCast = tmdbCredits?.filter((c: any) => c.role !== "감독").map((c: any) => c.name) || [];
+
+          const finalDirector = tmdbDirector || director;
+          const finalCast = tmdbCast.length > 0 ? tmdbCast : cast;
+
+          // TMDb API 데이터 연동 (포스터 URL 및 상세 줄거리)
+          const tmdbPoster = data?.tmdb?.posterUrl;
+          const tmdbPlot = data?.tmdb?.plotText;
+
+          const thumbnail = tmdbPoster || basicInfo.thumbnail;
+          const summary = tmdbPlot || basicInfo.summary;
+
+          const richContent: Content = {
+            ...basicInfo,
+            genres,
+            director: finalDirector,
+            cast: finalCast,
+            runtime,
+            releaseYear,
+            ageRating,
+            country,
+            distributor,
+            crew,
+            summary,
+            thumbnail,
+            originalTitle: basicInfo.originalTitle || basicInfo.title,
+            tasteExplanation: basicInfo.tasteExplanation || "TMDb 실시간 연동 작품"
+          };
+
+          // Add/update dynamic contents list
+          setDynamicContents(prev => {
+            if (prev.some(c => c.id === richContent.id)) {
+              return prev.map(c => c.id === richContent.id ? richContent : c);
+            }
+            return [...prev, richContent];
+          });
+
+          setActiveMovie(richContent);
+        }
+      } else {
+        setDynamicContents(prev => prev.some(c => c.id === basicInfo.id) ? prev : [...prev, basicInfo]);
+        setActiveMovie(basicInfo);
+      }
+    } catch (e) {
+      console.error("Failed to load KOBIS movie details:", e);
+      setDynamicContents(prev => prev.some(c => c.id === basicInfo.id) ? prev : [...prev, basicInfo]);
+      setActiveMovie(basicInfo);
+    } finally {
+      setLoadingMovieDetail(false);
+    }
+  };
+
+  const openMovieDetail = async (movie: Content | null) => {
+    if (!movie) return;
+    if (movie.id.startsWith("kobis-")) {
+      const movieCd = movie.id.replace("kobis-", "");
+      await handleOpenKobisDetail(movieCd, movie);
+    } else {
+      await handleOpenKobisDetail("", movie);
+    }
+  };
+
+  // --- Tag Toggle Handler ---
+  const handleToggleTag = (movieId: string, tag: string) => {
+    const movieTags = selectedTags[movieId] || [];
+    let nextTags;
+    if (movieTags.includes(tag)) {
+      nextTags = movieTags.filter(t => t !== tag);
+    } else {
+      nextTags = [...movieTags, tag];
+    }
+    const nextSelectedTags = { ...selectedTags, [movieId]: nextTags };
+    setSelectedTags(nextSelectedTags);
+    localStorage.setItem("wp_selectedTags", JSON.stringify(nextSelectedTags));
+  };
+
+  // --- Custom Preference Handlers ---
+  const handleAddCustomPreference = (pref: CustomPreference) => {
+    const nextCustomPrefs = [...customPreferences, pref];
+    setCustomPreferences(nextCustomPrefs);
+    localStorage.setItem("wp_customPreferences", JSON.stringify(nextCustomPrefs));
+    triggerToast(`선호 취향 추가됨: ${pref.value} (${pref.reason})`);
+  };
+
+  const handleRemoveCustomPreference = (index: number) => {
+    const nextCustomPrefs = customPreferences.filter((_, idx) => idx !== index);
+    setCustomPreferences(nextCustomPrefs);
+    localStorage.setItem("wp_customPreferences", JSON.stringify(nextCustomPrefs));
+    triggerToast("선호 취향이 삭제되었습니다.");
   };
 
   // --- Run Recalculate Simulation ---
@@ -183,6 +439,103 @@ export default function WatchPickPage() {
     }
   }, [activeMovie, ratings, reviews]);
 
+  // --- KOBIS Search Hooks ---
+  useEffect(() => {
+    if (!sidebarSearchQuery.trim()) {
+      setKobisSidebarResults([]);
+      return;
+    }
+
+    const delayDebounce = setTimeout(async () => {
+      setLoadingKobisSidebar(true);
+      try {
+        const response = await fetch(`/api/kobis?action=search&query=${encodeURIComponent(sidebarSearchQuery)}`);
+        if (response.ok) {
+          const data = await response.json();
+          const list = data?.movieListResult?.movieList || [];
+          const mapped = list.map((item: any) => {
+            const genres = item.genreAlt ? item.genreAlt.split(',').map((g: string) => g.trim()) : [item.repGenreNm || "기타"];
+            const director = item.directors && item.directors.length > 0 ? item.directors[0].peopleNm : "알 수 없음";
+            const thumbnail = item.tmdb?.posterUrl || "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=600&q=80";
+            const summary = item.tmdb?.plotText || "영화진흥위원회 KOBIS 데이터를 로딩 중입니다...";
+            return {
+              id: `kobis-${item.movieCd}`,
+              title: item.movieNm,
+              type: 'movie' as const,
+              genres,
+              director,
+              cast: [],
+              rating: 0,
+              runtime: 120,
+              releaseYear: item.prdtYear ? Number(item.prdtYear) : 2024,
+              summary,
+              thumbnail,
+              moods: [],
+              platforms: [],
+              attributes: { story: 0, direction: 0, music: 0, acting: 0 },
+              isIndependent: false
+            };
+          });
+          setKobisSidebarResults(mapped);
+        }
+      } catch (e) {
+        console.error("Failed to fetch KOBIS suggestions:", e);
+      } finally {
+        setLoadingKobisSidebar(false);
+      }
+    }, 500);
+
+    return () => clearTimeout(delayDebounce);
+  }, [sidebarSearchQuery]);
+
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setKobisExploreResults([]);
+      return;
+    }
+
+    const delayDebounce = setTimeout(async () => {
+      setLoadingKobisExplore(true);
+      try {
+        const response = await fetch(`/api/kobis?action=search&query=${encodeURIComponent(searchQuery)}`);
+        if (response.ok) {
+          const data = await response.json();
+          const list = data?.movieListResult?.movieList || [];
+          const mapped = list.map((item: any) => {
+            const genres = item.genreAlt ? item.genreAlt.split(',').map((g: string) => g.trim()) : [item.repGenreNm || "기타"];
+            const director = item.directors && item.directors.length > 0 ? item.directors[0].peopleNm : "알 수 없음";
+            const thumbnail = item.tmdb?.posterUrl || "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=600&q=80";
+            const summary = item.tmdb?.plotText || "영화진흥위원회 KOBIS 데이터를 로딩 중입니다...";
+            return {
+              id: `kobis-${item.movieCd}`,
+              title: item.movieNm,
+              type: 'movie' as const,
+              genres,
+              director,
+              cast: [],
+              rating: 0,
+              runtime: 120,
+              releaseYear: item.prdtYear ? Number(item.prdtYear) : 2024,
+              summary,
+              thumbnail,
+              moods: [],
+              platforms: [],
+              attributes: { story: 0, direction: 0, music: 0, acting: 0 },
+              isIndependent: false
+            };
+          });
+          setKobisExploreResults(mapped);
+        }
+      } catch (e) {
+        console.error("Failed to fetch KOBIS explore results:", e);
+      } finally {
+        setLoadingKobisExplore(false);
+      }
+    }, 500);
+
+    return () => clearTimeout(delayDebounce);
+  }, [searchQuery]);
+
   // --- Build mock user evaluations list to feed into recommendation calculator ---
   const userEvaluations: UserEvaluation[] = Object.keys(ratings).map(contentId => ({
     contentId,
@@ -202,13 +555,15 @@ export default function WatchPickPage() {
 
   // --- Recommendation Engine Results ---
   const recResults = calculateRecommendations(
-    contents,
+    dynamicContents,
     connectedPlatforms,
     userEvaluations,
     false,
     runtimePreference,
     likedContentIds,
-    dislikedContentIds
+    dislikedContentIds,
+    selectedTags,
+    customPreferences
   );
 
   // --- Category Filters for Mockup 1 Tabs ---
@@ -259,10 +614,28 @@ export default function WatchPickPage() {
     return true;
   });
 
+  // --- Explore Tab Search Results ---
+  const displayedExploreResults = [
+    ...exploredContents,
+    ...kobisExploreResults
+      .filter(kMovie => !exploredContents.some(item => item.content.id === kMovie.id))
+      .map(kMovie => ({
+        content: kMovie,
+        score: 80, // Default base score for external movies
+        matchedReasons: ["영화진흥위원회 KOBIS 검색 결과입니다."],
+        rank: 0
+      }))
+  ];
+
   // --- Sidebar Search Query Filter ---
-  const sidebarFilteredSuggestions = contents.filter(movie =>
-    movie.title.toLowerCase().includes(sidebarSearchQuery.toLowerCase())
-  );
+  const sidebarFilteredSuggestions = [
+    ...dynamicContents.filter(movie =>
+      movie.title.toLowerCase().includes(sidebarSearchQuery.toLowerCase())
+    ),
+    ...kobisSidebarResults.filter(kMovie => 
+      !dynamicContents.some(c => c.id === kMovie.id)
+    )
+  ];
 
   // --- Clear Curation States (Settings) ---
   const handleClearAllData = () => {
@@ -271,10 +644,14 @@ export default function WatchPickPage() {
       setReviews({});
       setSavedContentIds([]);
       setConnectedPlatforms(["Netflix", "TVING"]);
+      setSelectedTags({});
+      setCustomPreferences([]);
       localStorage.removeItem("wp_ratings");
       localStorage.removeItem("wp_reviews");
       localStorage.removeItem("wp_savedContentIds");
       localStorage.removeItem("wp_connectedPlatforms");
+      localStorage.removeItem("wp_selectedTags");
+      localStorage.removeItem("wp_customPreferences");
       triggerToast("모든 데이터가 초기화되었습니다.");
     }
   };
@@ -303,6 +680,14 @@ export default function WatchPickPage() {
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex flex-col items-center justify-center gap-4 animate-fadeIn">
           <Loader2 className="w-10 h-10 text-primary animate-spin" />
           <span className="text-sm font-bold text-slate-300">취향 데이터를 기반으로 알고리즘 점수 분석 중...</span>
+        </div>
+      )}
+
+      {/* KOBIS Detail Loader Backdrop */}
+      {loadingMovieDetail && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex flex-col items-center justify-center gap-4 animate-fadeIn">
+          <Loader2 className="w-10 h-10 text-primary animate-spin" />
+          <span className="text-sm font-bold text-slate-300">영화진흥위원회(KOBIS) 상세 정보 로딩 중...</span>
         </div>
       )}
 
@@ -347,21 +732,34 @@ export default function WatchPickPage() {
               {/* Sidebar Search Suggestions Dropdown */}
               {showSidebarSuggestions && sidebarSearchQuery && (
                 <div className="absolute left-0 right-0 top-full mt-1 bg-[#1c1d2d] border border-white/10 rounded-xl shadow-2xl z-50 max-h-[180px] overflow-y-auto divide-y divide-white/5">
+                  {loadingKobisSidebar && (
+                    <div className="px-3 py-2 text-[10px] text-slate-500 text-center flex items-center justify-center gap-1.5">
+                      <Loader2 className="w-3.5 h-3.5 text-primary animate-spin" />
+                      <span>KOBIS API 검색 중...</span>
+                    </div>
+                  )}
                   {sidebarFilteredSuggestions.map(movie => (
                     <div 
                       key={movie.id}
                       onClick={() => {
-                        setActiveMovie(movie);
+                        if (movie.id.startsWith("kobis-")) {
+                          const movieCd = movie.id.replace("kobis-", "");
+                          handleOpenKobisDetail(movieCd, movie);
+                        } else {
+                          setActiveMovie(movie);
+                        }
                         setSidebarSearchQuery("");
                         setShowSidebarSuggestions(false);
                       }}
                       className="px-3 py-2 text-[11px] font-medium hover:bg-primary/10 cursor-pointer flex justify-between items-center transition-colors"
                     >
                       <span className="text-slate-200 truncate pr-2">{movie.title}</span>
-                      <span className="text-[9px] text-slate-500 shrink-0">{movie.releaseYear}</span>
+                      <span className="text-[9px] text-slate-500 shrink-0">
+                        {movie.id.startsWith("kobis-") ? `KOBIS • ${movie.releaseYear}` : movie.releaseYear}
+                      </span>
                     </div>
                   ))}
-                  {sidebarFilteredSuggestions.length === 0 && (
+                  {!loadingKobisSidebar && sidebarFilteredSuggestions.length === 0 && (
                     <div className="px-3 py-2 text-[10px] text-slate-500 text-center">검색 결과가 없습니다.</div>
                   )}
                 </div>
@@ -423,7 +821,7 @@ export default function WatchPickPage() {
                       </div>
                       <div className="min-w-0 flex-1">
                         <span 
-                          onClick={() => setActiveMovie(contents.find(c => c.id === item.id) || null)}
+                          onClick={() => openMovieDetail(contents.find(c => c.id === item.id) || null)}
                           className="text-xs font-bold text-slate-200 block truncate hover:text-primary transition-colors cursor-pointer"
                         >
                           {item.title}
@@ -872,7 +1270,7 @@ export default function WatchPickPage() {
                         <div key={movie.id} className="movie-grid-card">
                           
                           {/* Image Box */}
-                          <div className="relative aspect-[16/10] w-full bg-slate-900 overflow-hidden cursor-pointer" onClick={() => setActiveMovie(movie)}>
+                          <div className="relative aspect-[16/10] w-full bg-slate-900 overflow-hidden cursor-pointer" onClick={() => openMovieDetail(movie)}>
                             <img src={movie.thumbnail} alt={movie.title} className="w-full h-full object-cover" />
                             <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
                             
@@ -887,13 +1285,13 @@ export default function WatchPickPage() {
                           <div className="p-4 flex-1 flex flex-col justify-between gap-4">
                             <div className="space-y-1.5">
                               <h3 
-                                onClick={() => setActiveMovie(movie)}
+                                onClick={() => openMovieDetail(movie)}
                                 className="text-sm font-bold text-white hover:text-primary cursor-pointer transition-colors leading-snug truncate"
                               >
                                 {movie.title}
                               </h3>
                               <p className="text-[11px] text-slate-400 font-medium leading-relaxed italic">
-                                “{movie.tasteExplanation}”
+                                “{item.matchedReasons && item.matchedReasons.length > 0 ? item.matchedReasons[0] : movie.tasteExplanation}”
                               </p>
                             </div>
 
@@ -915,7 +1313,7 @@ export default function WatchPickPage() {
 
                               {/* Right details button */}
                               <button 
-                                onClick={() => setActiveMovie(movie)}
+                                onClick={() => openMovieDetail(movie)}
                                 className="text-[#aba1ff] hover:text-white transition-colors cursor-pointer inline-flex items-center gap-0.5 shrink-0"
                               >
                                 <span>상세보기</span>
@@ -1028,9 +1426,37 @@ export default function WatchPickPage() {
                       </div>
                     </div>
 
+                    {/* Runtime Preference Selector */}
+                    <div className="space-y-2 pt-2 border-t border-white/5">
+                      <label className="text-[10px] font-black text-slate-500 tracking-wider block uppercase">러닝타임</label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[
+                          { key: "all", label: "전체" },
+                          { key: "short", label: "60분 이하" },
+                          { key: "medium", label: "61분 ~ 130분" },
+                          { key: "long", label: "131분 이상" }
+                        ].map(opt => {
+                          const isSelected = runtimePreference === opt.key;
+                          return (
+                            <button
+                              key={opt.key}
+                              onClick={() => setRuntimePreference(opt.key)}
+                              className={`px-3 py-1.5 rounded-full border text-[10px] font-bold transition-all cursor-pointer ${
+                                isSelected 
+                                  ? "bg-primary/20 border-primary text-[#aba1ff]" 
+                                  : "bg-[#1f2030] border-white/5 text-slate-400 hover:text-slate-200"
+                              }`}
+                            >
+                              {opt.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
                     {/* Reset Button */}
                     <button
-                      onClick={() => { setSearchQuery(""); setSelectedMoods([]); setSelectedGenres([]); }}
+                      onClick={() => { setSearchQuery(""); setSelectedMoods([]); setSelectedGenres([]); setRuntimePreference("all"); }}
                       className="w-full bg-white/5 hover:bg-white/10 text-slate-300 font-extrabold text-[11px] py-2.5 rounded-xl transition-all cursor-pointer text-center"
                     >
                       필터 조건 초기화
@@ -1040,16 +1466,26 @@ export default function WatchPickPage() {
 
                   {/* Right search results grid */}
                   <div className="lg:col-span-2 space-y-4">
-                    <span className="text-[11px] font-black text-slate-500 tracking-wider block uppercase">탐색 결과 ({exploredContents.length}개 발견)</span>
+                    <span className="text-[11px] font-black text-slate-500 tracking-wider block uppercase">
+                      탐색 결과 ({displayedExploreResults.length}개 발견)
+                    </span>
                     
-                    {exploredContents.length > 0 ? (
+                    {loadingKobisExplore && (
+                      <div className="py-3 bg-primary/10 border border-primary/20 rounded-xl text-center text-xs font-bold text-slate-300 flex items-center justify-center gap-2">
+                        <Loader2 className="w-4 h-4 text-primary animate-spin" />
+                        <span>KOBIS OpenAPI 실시간 검색 중...</span>
+                      </div>
+                    )}
+
+                    {displayedExploreResults.length > 0 ? (
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {exploredContents.map(item => {
+                        {displayedExploreResults.map(item => {
                           const movie = item.content;
+                          const isKobis = movie.id.startsWith("kobis-");
                           return (
                             <div 
                               key={movie.id}
-                              onClick={() => setActiveMovie(movie)}
+                              onClick={() => openMovieDetail(movie)}
                               className="bg-[#151622] hover:bg-[#1a1b2a] border border-white/5 hover:border-primary/20 rounded-2xl p-4 flex gap-4 transition-all cursor-pointer group"
                             >
                               <div className="w-16 h-24 bg-slate-900 rounded overflow-hidden shrink-0 border border-white/5 shadow-md">
@@ -1058,12 +1494,22 @@ export default function WatchPickPage() {
                               <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5">
                                 <div>
                                   <div className="flex justify-between items-start gap-2">
-                                    <h4 className="text-xs sm:text-sm font-bold text-slate-200 group-hover:text-primary transition-colors truncate">{movie.title}</h4>
-                                    <span className="text-[9px] font-extrabold text-primary px-1.5 py-0.5 rounded bg-primary/10 tracking-wider shrink-0">{item.score}%</span>
+                                    <h4 className="text-xs sm:text-sm font-bold text-slate-200 group-hover:text-primary transition-colors truncate">
+                                      {movie.title}
+                                    </h4>
+                                    <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded tracking-wider shrink-0 ${
+                                      isKobis ? "bg-emerald-500/20 text-emerald-400" : "bg-primary/10 text-primary"
+                                    }`}>
+                                      {isKobis ? "KOBIS" : `${item.score}%`}
+                                    </span>
                                   </div>
-                                  <p className="text-[10px] text-slate-400 mt-1">{movie.releaseYear} • {movie.genres.join(", ")} • {movie.runtime}분</p>
+                                  <p className="text-[10px] text-slate-400 mt-1">
+                                    {movie.releaseYear} • {movie.genres.join(", ")} • {isKobis ? "상세 정보 제공" : `${movie.runtime}분`}
+                                  </p>
                                 </div>
-                                <span className="text-[10px] text-slate-500 truncate mt-1">감독: {movie.director} • 출연: {movie.cast.slice(0, 2).join(", ")}</span>
+                                <span className="text-[10px] text-slate-500 truncate mt-1">
+                                  감독: {movie.director} {movie.cast && movie.cast.length > 0 && `• 출연: ${movie.cast.slice(0, 2).join(", ")}`}
+                                </span>
                               </div>
                             </div>
                           );
@@ -1099,7 +1545,7 @@ export default function WatchPickPage() {
                         const scoreItem = recResults.find(r => r.content.id === movie.id);
                         return (
                           <div key={movie.id} className="movie-grid-card">
-                            <div className="relative aspect-[16/10] w-full bg-slate-900 overflow-hidden cursor-pointer" onClick={() => setActiveMovie(movie)}>
+                            <div className="relative aspect-[16/10] w-full bg-slate-900 overflow-hidden cursor-pointer" onClick={() => openMovieDetail(movie)}>
                               <img src={movie.thumbnail} alt={movie.title} className="w-full h-full object-cover" />
                               <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
                               
@@ -1114,13 +1560,13 @@ export default function WatchPickPage() {
 
                             <div className="p-4 flex-1 flex flex-col justify-between gap-3">
                               <div>
-                                <h3 onClick={() => setActiveMovie(movie)} className="text-sm font-bold text-white hover:text-primary cursor-pointer transition-colors leading-snug truncate">{movie.title}</h3>
+                                <h3 onClick={() => openMovieDetail(movie)} className="text-sm font-bold text-white hover:text-primary cursor-pointer transition-colors leading-snug truncate">{movie.title}</h3>
                                 <p className="text-[10px] text-slate-400 mt-1 font-semibold">{movie.genres.join(", ")} • {movie.runtime}분</p>
                               </div>
 
                               <div className="flex justify-between items-center text-[10px] font-bold border-t border-white/5 pt-2">
                                 <span className="text-[#aba1ff]">⚡ 매칭율 {scoreItem?.score || 80}%</span>
-                                <button onClick={() => setActiveMovie(movie)} className="text-slate-400 hover:text-white transition-colors cursor-pointer">자세히 보기 &gt;</button>
+                                <button onClick={() => openMovieDetail(movie)} className="text-slate-400 hover:text-white transition-colors cursor-pointer">자세히 보기 &gt;</button>
                               </div>
                             </div>
                           </div>
@@ -1162,7 +1608,7 @@ export default function WatchPickPage() {
                           <div className="flex-1 min-w-0 flex flex-col justify-between">
                             <div>
                               <div className="flex justify-between items-start gap-2">
-                                <h4 onClick={() => setActiveMovie(movie)} className="text-sm font-bold text-white hover:text-primary cursor-pointer transition-colors truncate">{movie.title}</h4>
+                                <h4 onClick={() => openMovieDetail(movie)} className="text-sm font-bold text-white hover:text-primary cursor-pointer transition-colors truncate">{movie.title}</h4>
                                 
                                 <div className="flex items-center gap-0.5 text-yellow-500">
                                   <Star className="w-3.5 h-3.5 fill-current" />
@@ -1252,6 +1698,136 @@ export default function WatchPickPage() {
 
                 </div>
 
+                {/* 선호 장르 및 배우 관리 (가산점 부여) */}
+                <div className="bg-[#151622] border border-white/5 rounded-2xl p-6 space-y-6 shadow-xl">
+                  <div className="space-y-2 border-b border-white/5 pb-3">
+                    <h3 className="text-sm font-bold text-white">선호 장르 및 배우 관리 (추천 가산점 부여)</h3>
+                    <p className="text-[11px] text-slate-400 font-semibold">
+                      좋아하는 장르나 배우를 등록하고 이유를 작성하면 관련 작품 추천 시 높은 가산점이 부여됩니다.
+                    </p>
+                  </div>
+
+                  {/* Add Preference Form */}
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      {/* Type Select */}
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-500 tracking-wider block uppercase">구분</label>
+                        <select 
+                          value={newPrefType}
+                          onChange={(e) => {
+                            const val = e.target.value as 'genre' | 'actor';
+                            setNewPrefType(val);
+                            setNewPrefValue(val === 'genre' ? 'SF/판타지' : Array.from(new Set(contents.flatMap(c => c.cast))).sort()[0]);
+                          }}
+                          className="w-full bg-[#1c1d2d] border border-white/10 rounded-xl px-3 py-2 text-xs font-semibold outline-none focus:border-primary/45 text-white cursor-pointer"
+                        >
+                          <option value="genre">장르</option>
+                          <option value="actor">배우</option>
+                        </select>
+                      </div>
+
+                      {/* Value Select */}
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-500 tracking-wider block uppercase">선택</label>
+                        {newPrefType === 'genre' ? (
+                          <select
+                            value={newPrefValue}
+                            onChange={(e) => setNewPrefValue(e.target.value)}
+                            className="w-full bg-[#1c1d2d] border border-white/10 rounded-xl px-3 py-2 text-xs font-semibold outline-none focus:border-primary/45 text-white cursor-pointer"
+                          >
+                            {["SF/판타지", "스릴러", "로맨스", "코미디", "드라마", "다큐멘터리", "액션", "역사", "미스터리", "공포"].map(g => (
+                              <option key={g} value={g}>{g}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <select
+                            value={newPrefValue}
+                            onChange={(e) => setNewPrefValue(e.target.value)}
+                            className="w-full bg-[#1c1d2d] border border-white/10 rounded-xl px-3 py-2 text-xs font-semibold outline-none focus:border-primary/45 text-white cursor-pointer"
+                          >
+                            {Array.from(new Set(contents.flatMap(c => c.cast))).sort().map(a => (
+                              <option key={a} value={a}>{a}</option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Reason input */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-500 tracking-wider block uppercase">좋아하는 이유</label>
+                      <input
+                        type="text"
+                        placeholder="예: 깊은 몰입감을 주어서, 믿고 보는 연기력 등"
+                        value={newPrefReason}
+                        onChange={(e) => setNewPrefReason(e.target.value.slice(0, 100))}
+                        className="w-full bg-[#1c1d2d] border border-white/10 rounded-xl px-3 py-2 text-xs font-semibold outline-none focus:border-primary/45 text-white"
+                      />
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        if (!newPrefReason.trim()) {
+                          triggerToast("좋아하는 이유를 작성해주세요.");
+                          return;
+                        }
+                        handleAddCustomPreference({
+                          type: newPrefType,
+                          value: newPrefValue,
+                          reason: newPrefReason.trim()
+                        });
+                        setNewPrefReason("");
+                      }}
+                      className="w-full bg-primary hover:bg-primary-hover active:scale-95 text-white font-extrabold text-xs py-2.5 rounded-xl transition-all text-center cursor-pointer shadow-md"
+                    >
+                      선호 취향 추가하기
+                    </button>
+                  </div>
+
+                  {/* Preferences List */}
+                  <div className="space-y-3 pt-4 border-t border-white/5">
+                    <span className="text-[10px] font-black text-slate-500 tracking-wider block uppercase">내가 등록한 선호 조건 ({customPreferences.length}개)</span>
+                    
+                    {customPreferences.length > 0 ? (
+                      <div className="space-y-2">
+                        {customPreferences.map((pref, idx) => (
+                          <div 
+                            key={idx}
+                            className="bg-[#1c1d2d] border border-white/5 rounded-xl p-3 flex justify-between items-center gap-4 text-xs"
+                          >
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className={`px-2 py-0.5 rounded text-[9px] font-black tracking-wider ${
+                                  pref.type === 'genre' ? 'bg-primary/20 text-[#aba1ff]' : 'bg-emerald-500/20 text-emerald-400'
+                                }`}>
+                                  {pref.type === 'genre' ? '장르' : '배우'}
+                                </span>
+                                <span className="font-bold text-slate-200">{pref.value}</span>
+                                <span className="text-[10px] text-primary font-bold">{pref.type === 'genre' ? '+10점' : '+7점'}</span>
+                              </div>
+                              <p className="text-[11px] text-slate-400 mt-1 truncate">
+                                사유: &quot;{pref.reason}&quot;
+                              </p>
+                            </div>
+                            
+                            <button
+                              onClick={() => handleRemoveCustomPreference(idx)}
+                              className="text-slate-500 hover:text-red-400 p-1.5 rounded-lg hover:bg-red-500/10 transition-all cursor-pointer shrink-0"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="py-6 text-center bg-black/20 border border-dashed border-white/5 rounded-xl">
+                        <p className="text-[11px] text-slate-500 font-semibold">등록된 선호 취향 조건이 없습니다. 좋아하는 장르와 배우를 등록해보세요!</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
               </main>
             )}
 
@@ -1332,6 +1908,71 @@ export default function WatchPickPage() {
                       <span className="text-sm font-black text-yellow-500 ml-2">{detailRating}점 선택됨</span>
                     )}
                   </div>
+
+                  {/* Dynamic Preference Tags Selection Panel */}
+                  {detailRating > 0 && (
+                    <div className="space-y-2 pt-2 border-t border-white/5 animate-fadeIn">
+                      <p className="text-[11px] font-bold text-slate-400">
+                        {detailRating >= 4 
+                          ? "이 작품의 어떤 점이 좋으셨나요? (선택 시 맞춤 추천 가산점 부여)" 
+                          : "이 작품의 어떤 점이 아쉬우셨나요? (선택 시 맞춤 추천 감점 반영)"}
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {/* Genres */}
+                        {activeMovie.genres.map(genre => {
+                          const isSelected = (selectedTags[activeMovie.id] || []).includes(genre);
+                          return (
+                            <button
+                              key={`genre-${genre}`}
+                              onClick={() => handleToggleTag(activeMovie.id, genre)}
+                              className={`px-3 py-1.5 rounded-full border text-[10px] font-bold transition-all cursor-pointer ${
+                                isSelected 
+                                  ? "bg-primary/20 border-primary text-[#aba1ff]" 
+                                  : "bg-[#1f2030]/50 border-white/5 text-slate-400 hover:text-slate-200"
+                              }`}
+                            >
+                              장르: {genre}
+                            </button>
+                          );
+                        })}
+
+                        {/* Cast */}
+                        {activeMovie.cast.map(actor => {
+                          const isSelected = (selectedTags[activeMovie.id] || []).includes(actor);
+                          return (
+                            <button
+                              key={`actor-${actor}`}
+                              onClick={() => handleToggleTag(activeMovie.id, actor)}
+                              className={`px-3 py-1.5 rounded-full border text-[10px] font-bold transition-all cursor-pointer ${
+                                isSelected 
+                                  ? "bg-primary/20 border-primary text-[#aba1ff]" 
+                                  : "bg-[#1f2030]/50 border-white/5 text-slate-400 hover:text-slate-200"
+                              }`}
+                            >
+                              배우: {actor}
+                            </button>
+                          );
+                        })}
+
+                        {/* Director */}
+                        {(() => {
+                          const isSelected = (selectedTags[activeMovie.id] || []).includes(activeMovie.director);
+                          return (
+                            <button
+                              onClick={() => handleToggleTag(activeMovie.id, activeMovie.director)}
+                              className={`px-3 py-1.5 rounded-full border text-[10px] font-bold transition-all cursor-pointer ${
+                                isSelected 
+                                  ? "bg-primary/20 border-primary text-[#aba1ff]" 
+                                  : "bg-[#1f2030]/50 border-white/5 text-slate-400 hover:text-slate-200"
+                              }`}
+                            >
+                              감독: {activeMovie.director}
+                            </button>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Character input review text area */}
                   <div className="space-y-1.5">
@@ -1416,13 +2057,20 @@ export default function WatchPickPage() {
                     <h3 className="text-xs font-black tracking-widest text-[#aba1ff] uppercase">취향 분석 결과</h3>
                   </div>
 
-                  <p className="text-xs text-slate-200 leading-relaxed font-bold">
-                    {ratings["movie-parasite"] && activeMovie.id !== "movie-parasite" ? (
-                      `당신이 높은 점수를 준 '기생충'과 감독, 장르 분위기가 유사하여 오늘의 맞춤 추천 알고리즘 저격 완료!`
-                    ) : (
-                      `당신이 5점을 준 '인셉션'과 감독, 장르가 90% 일치하여 취향저격했습니다.`
-                    )}
-                  </p>
+                  <div className="text-xs text-slate-200 leading-relaxed font-bold space-y-2">
+                    {(() => {
+                      const matchedItem = recResults.find(r => r.content.id === activeMovie.id);
+                      if (matchedItem && matchedItem.matchedReasons.length > 0) {
+                        return matchedItem.matchedReasons.map((reason, idx) => (
+                          <div key={idx} className="flex items-start gap-1.5">
+                            <span className="text-primary font-bold">✓</span>
+                            <span className="text-slate-300 font-semibold text-[11px]">{reason}</span>
+                          </div>
+                        ));
+                      }
+                      return <div className="text-slate-400 font-semibold text-[11px]">이 작품은 평점 및 기본 정보 바탕으로 추천되었습니다.</div>;
+                    })()}
+                  </div>
 
                   <div className="space-y-1.5 pt-2">
                     <div className="flex justify-between text-[11px] font-black text-slate-400">

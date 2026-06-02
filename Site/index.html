@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>취향저격 - 개인 맞춤형 OTT 작품 추천 서비스</title>
+  <meta name="description" content="장르, 배우, 감독 취향을 분석하여 당신의 취향에 딱 맞는 OTT 작품을 추천하고 그 이유를 설명해 드립니다.">
+  
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+  
+  <!-- Style Sheet -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="dark-theme">
+
+  <!-- Header -->
+  <header class="main-header">
+    <div class="header-container">
+      <a href="#" class="logo" id="logoLink">취향저격</a>
+      <nav class="nav-links">
+        <a href="#" class="nav-item active" data-target="main">Discovery</a>
+        <a href="#" class="nav-item" id="navAiPicks" data-target="evaluation">AI Picks</a>
+        <a href="#" class="nav-item disabled">My List</a>
+        <a href="#" class="nav-item disabled">Trending</a>
+      </nav>
+      <div class="header-actions">
+        <button class="search-btn" aria-label="검색">
+          <svg class="icon-search" viewBox="0 0 24 24" width="20" height="20">
+            <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 5 9.5 9.5 5 11.99 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+          </svg>
+        </button>
+        <div id="userHeaderArea">
+          <button class="btn btn-login-nav" id="headerLoginBtn">로그인</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main View Container -->
+  <main class="main-content">
+    
+    <!-- Screen 1: Main Page -->
+    <section id="screen-main" class="screen active">
+      <div class="hero-container">
+        <div class="hero-bg-blur"></div>
+        <div class="hero-content">
+          <h1 class="hero-title">당신의 취향을 저격하는<br><span>OTT 추천 서비스</span></h1>
+          <p class="hero-subtitle">장르, 배우, 감독 취향을 분석하여 작품을 추천합니다.</p>
+          <button class="btn btn-primary btn-large btn-glow" id="heroStartBtn">
+            작품 추천받기
+            <svg viewBox="0 0 24 24" width="20" height="20" class="arrow-icon">
+              <path d="M5 12h14M12 5l7 7-7 7" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+      
+      <!-- Feature highlights or decoration -->
+      <div class="main-deco-grid">
+        <div class="deco-card">
+          <div class="deco-icon">🎬</div>
+          <h3>선호 정보 분석</h3>
+          <p>사용자가 선택한 장르, 배우, 감독 취향을 정밀하게 분석합니다.</p>
+        </div>
+        <div class="deco-card">
+          <div class="deco-icon">📊</div>
+          <h3>취향 점수 계산</h3>
+          <p>평점과 가중치를 기반으로 사용자 맞춤 추천 점수를 계산합니다.</p>
+        </div>
+        <div class="deco-card">
+          <div class="deco-icon">💡</div>
+          <h3>설명 가능한 추천</h3>
+          <p>왜 이 작품이 추천되었는지 상세한 이유를 투명하게 알려드립니다.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Screen 2: Login Page -->
+    <section id="screen-login" class="screen">
+      <div class="login-card-wrapper">
+        <!-- Login Card -->
+        <div class="login-card" id="loginCard">
+          <div class="login-header">
+            <h2>Welcome Back</h2>
+            <p>당신만을 위한 시네마틱 큐레이션, 취향저격</p>
+          </div>
+          
+          <form id="loginForm" class="login-form" onsubmit="return false;">
+            <div class="form-group">
+              <label for="loginId">아이디</label>
+              <div class="input-wrapper">
+                <span class="input-icon">
+                  <svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="currentColor"/></svg>
+                </span>
+                <input type="text" id="loginId" placeholder="Username or Email" required autocomplete="username">
+              </div>
+            </div>
+            
+            <div class="form-group">
+              <label for="loginPw">비밀번호</label>
+              <div class="input-wrapper">
+                <span class="input-icon">
+                  <svg viewBox="0 0 24 24" width="18" height="18"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z" fill="currentColor"/></svg>
+                </span>
+                <input type="password" id="loginPw" placeholder="••••••••" required autocomplete="current-password">
+              </div>
+            </div>
+
+            <div class="form-options">
+              <label class="checkbox-container">
+                <input type="checkbox" id="rememberMe">
+                <span class="checkmark"></span>
+                로그인 상태 유지
+              </label>
+              <a href="#" class="forgot-pw">비밀번호를 잊으셨나요?</a>
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-block" id="submitLoginBtn">로그인</button>
+            <button type="button" class="btn btn-secondary btn-block" id="joinBtn">회원가입</button>
+          </form>
+
+          <div class="divider">
+            <span>또는 OTT 계정 연동</span>
+          </div>
+
+          <div class="ott-connect-buttons">
+            <button class="ott-btn ott-netflix" id="ottNetflixBtn">
+              <span class="ott-logo">N</span>
+              <span class="ott-text">넷플릭스 계정 연동하기</span>
+              <span class="arrow-right"></span>
+            </button>
+            <button class="ott-btn ott-disney" id="ottDisneyBtn">
+              <span class="ott-logo">
+                <svg viewBox="0 0 24 24" width="18" height="18"><path d="M4 6v12h16V6H4zm14 10H6V8h12v8z" fill="currentColor"/></svg>
+              </span>
+              <span class="ott-text">디즈니플러스 계정 연동하기</span>
+              <span class="arrow-right"></span>
+            </button>
+            <button class="ott-btn ott-watcha" id="ottWatchaBtn">
+              <span class="ott-logo">♥</span>
+              <span class="ott-text">왓챠 계정 연동하기</span>
+              <span class="arrow-right"></span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Signup Card (Initially Hidden) -->
+        <div class="login-card" id="signupCard" style="display: none;">
+          <div class="login-header">
+            <h2>Create Account</h2>
+            <p>취향저격에서 당신의 영화 취향을 찾아보세요</p>
+          </div>
+          
+          <form id="signupForm" class="login-form" onsubmit="return false;">
+            <div class="form-group">
+              <label for="signupId">아이디</label>
+              <div class="input-wrapper">
+                <span class="input-icon">
+                  <svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="currentColor"/></svg>
+                </span>
+                <input type="text" id="signupId" placeholder="아이디 입력" required>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="signupEmail">이메일</label>
+              <div class="input-wrapper">
+                <span class="input-icon">
+                  <svg viewBox="0 0 24 24" width="18" height="18"><path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z" fill="currentColor"/></svg>
+                </span>
+                <input type="email" id="signupEmail" placeholder="example@email.com" required>
+              </div>
+            </div>
+            
+            <div class="form-group">
+              <label for="signupPw">비밀번호</label>
+              <div class="input-wrapper">
+                <span class="input-icon">
+                  <svg viewBox="0 0 24 24" width="18" height="18"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z" fill="currentColor"/></svg>
+                </span>
+                <input type="password" id="signupPw" placeholder="비밀번호 입력 (4자 이상)" required>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="signupConfirmPw">비밀번호 확인</label>
+              <div class="input-wrapper">
+                <span class="input-icon">
+                  <svg viewBox="0 0 24 24" width="18" height="18"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z" fill="currentColor"/></svg>
+                </span>
+                <input type="password" id="signupConfirmPw" placeholder="비밀번호 재입력" required>
+              </div>
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-block" id="submitSignupBtn">회원가입 완료</button>
+            <button type="button" class="btn btn-secondary btn-block" id="backToLoginBtn">로그인으로 돌아가기</button>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <!-- Screen 3: Movie Evaluation Page -->
+    <section id="screen-evaluation" class="screen">
+      <div class="evaluation-container">
+        <div class="section-header text-center">
+          <h2 class="section-title">취향 분석을 위해 작품을 평가해주세요</h2>
+          <p class="section-subtitle">평점을 입력하고, 선호하거나 비선호하는 이유를 선택하면 최적의 추천이 시작됩니다.</p>
+        </div>
+
+        <!-- Movie Cards Row -->
+        <div class="evaluation-grid" id="evaluationGrid">
+          <!-- Dynamically filled with 3 movie cards -->
+          <div class="evaluation-loading">작품을 불러오는 중입니다...</div>
+        </div>
+
+        <!-- Bottom Action -->
+        <div class="evaluation-actions text-center">
+          <button class="btn btn-primary btn-large btn-glow" id="viewRecommendationsBtn" disabled>
+            추천 결과 보기
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Screen 4: Recommendation Page -->
+    <section id="screen-recommendation" class="screen">
+      <div class="recommendation-container">
+        <div class="section-header text-center">
+          <h2 class="section-title">당신을 위한 추천 작품</h2>
+          <p class="section-subtitle">당신의 평가 결과를 바탕으로 추천된 작품입니다. AI가 분석한 최적의 매칭을 확인해보세요.</p>
+        </div>
+
+        <!-- Recommended Movies Row -->
+        <div class="recommendation-grid" id="recommendationGrid">
+          <!-- Dynamically filled with top 3 recommended movies -->
+        </div>
+
+        <!-- Bottom Actions -->
+        <div class="recommendation-actions">
+          <button class="btn btn-secondary btn-large" id="reEvaluateBtn">
+            <svg viewBox="0 0 24 24" width="18" height="18" class="btn-icon">
+              <path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            다시 평가하기
+          </button>
+          <button class="btn btn-primary btn-large btn-glow" id="goMainBtn">
+            <svg viewBox="0 0 24 24" width="18" height="18" class="btn-icon">
+              <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M9 22V12h6v10" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            메인으로 이동
+          </button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="main-footer">
+    <div class="footer-container">
+      <div class="footer-left">
+        <span class="footer-logo">취향저격 <span class="footer-sublogo">Cinema AI</span></span>
+      </div>
+      <div class="footer-links">
+        <a href="#">Privacy Policy</a>
+        <a href="#">Terms of Service</a>
+        <a href="#">Help Center</a>
+        <a href="#">Cookie Settings</a>
+      </div>
+      <div class="footer-right">
+        <p class="footer-copyright">© 2026 취향저격 Cinema AI. All rights reserved.</p>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Notification Toast -->
+  <div class="toast" id="toast"></div>
+
+  <!-- Scripts -->
+  <script src="app.js"></script>
+</body>
+</html>

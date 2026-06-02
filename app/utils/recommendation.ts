@@ -55,6 +55,36 @@ export function analyzeSentiment(text: string, globalRating: number): { score: n
   return { score, label, keywords: foundKeywords.slice(0, 3) };
 }
 
+export interface CustomPreference {
+  type: 'genre' | 'actor';
+  value: string;
+  reason: string;
+}
+
+const SCORING_TABLE: Record<string, Record<number, { preferred: number; disliked: number }>> = {
+  genre: {
+    5: { preferred: 10, disliked: -15 },
+    4: { preferred: 8, disliked: -11 },
+    3: { preferred: 0, disliked: 0 },
+    2: { preferred: -5, disliked: -8 },
+    1: { preferred: -10, disliked: -12 }
+  },
+  actor: {
+    5: { preferred: 7, disliked: -10 },
+    4: { preferred: 5, disliked: -8 },
+    3: { preferred: 0, disliked: 0 },
+    2: { preferred: -3, disliked: -5 },
+    1: { preferred: -7, disliked: -9 }
+  },
+  director: {
+    5: { preferred: 5, disliked: -7 },
+    4: { preferred: 3, disliked: -5 },
+    3: { preferred: 0, disliked: 0 },
+    2: { preferred: -2, disliked: -3 },
+    1: { preferred: -5, disliked: -6 }
+  }
+};
+
 export function calculateRecommendations(
   contents: Content[],
   connectedPlatforms: string[], // e.g. ['Netflix', 'TVING']
@@ -62,9 +92,54 @@ export function calculateRecommendations(
   indieBoost: boolean,
   runtimePreference: string,
   likedContentIds: string[],
-  dislikedContentIds: string[]
+  dislikedContentIds: string[],
+  selectedTags?: Record<string, string[]>,
+  customPreferences?: CustomPreference[]
 ): RecommendationResult[] {
   
+  // Compute tag-based feedback scores
+  const genreScores: Record<string, number> = {};
+  const actorScores: Record<string, number> = {};
+  const directorScores: Record<string, number> = {};
+
+  if (selectedTags) {
+    userEvaluations.forEach(evaluation => {
+      const rating = evaluation.globalRating;
+      const isPreferred = rating >= 4.0;
+      const tags = selectedTags[evaluation.contentId] || [];
+      
+      const evalContent = contents.find(c => c.id === evaluation.contentId);
+      if (!evalContent) return;
+
+      tags.forEach(tag => {
+        let tagType: 'genre' | 'actor' | 'director' | null = null;
+        if (evalContent.genres.includes(tag)) {
+          tagType = 'genre';
+        } else if (evalContent.cast.includes(tag)) {
+          tagType = 'actor';
+        } else if (evalContent.director === tag) {
+          tagType = 'director';
+        }
+
+        if (!tagType) return;
+
+        const table = SCORING_TABLE[tagType];
+        const ratingKey = Math.min(5, Math.max(1, Math.round(rating)));
+        const scoreLookup = table[ratingKey];
+        if (scoreLookup) {
+          const s = isPreferred ? scoreLookup.preferred : scoreLookup.disliked;
+          if (tagType === 'genre') {
+            genreScores[tag] = (genreScores[tag] || 0) + s;
+          } else if (tagType === 'actor') {
+            actorScores[tag] = (actorScores[tag] || 0) + s;
+          } else if (tagType === 'director') {
+            directorScores[tag] = (directorScores[tag] || 0) + s;
+          }
+        }
+      });
+    });
+  }
+
   const results: RecommendationResult[] = contents.map(content => {
     let score = content.baseScore || 75;
     const matchedReasons: string[] = [];
@@ -95,7 +170,55 @@ export function calculateRecommendations(
       matchedReasons.push(`직접 평가한 별점(${userEval.globalRating}점)이 반영되었습니다.`);
     }
 
-    // 4. Likes/Dislikes overrides
+    // 4. Accumulate tag-based feedback scores
+    let genreSum = 0;
+    content.genres.forEach(g => {
+      const s = genreScores[g] || 0;
+      genreSum += s;
+    });
+    if (genreSum > 0) {
+      matchedReasons.push(`선호 장르 피드백 반영 (+${genreSum}점)`);
+    } else if (genreSum < 0) {
+      matchedReasons.push(`비선호 장르 피드백 감점 (${genreSum}점)`);
+    }
+
+    let actorSum = 0;
+    content.cast.forEach(a => {
+      const s = actorScores[a] || 0;
+      actorSum += s;
+    });
+    if (actorSum > 0) {
+      matchedReasons.push(`선호 배우 피드백 반영 (+${actorSum}점)`);
+    } else if (actorSum < 0) {
+      matchedReasons.push(`비선호 배우 피드백 감점 (${actorSum}점)`);
+    }
+
+    const directorSum = directorScores[content.director] || 0;
+    if (directorSum > 0) {
+      matchedReasons.push(`선호 감독 피드백 반영 (+${directorSum}점)`);
+    } else if (directorSum < 0) {
+      matchedReasons.push(`비선호 감독 피드백 감점 (${directorSum}점)`);
+    }
+
+    // 5. Accumulate custom preference scores
+    let customGenreScore = 0;
+    let customActorScore = 0;
+    if (customPreferences) {
+      customPreferences.forEach(pref => {
+        if (pref.type === 'genre' && content.genres.includes(pref.value)) {
+          customGenreScore += 10;
+          matchedReasons.push(`선호 장르 [${pref.value}] 가산점 (+10점): "${pref.reason}"`);
+        } else if (pref.type === 'actor' && content.cast.includes(pref.value)) {
+          customActorScore += 7;
+          matchedReasons.push(`선호 배우 [${pref.value}] 가산점 (+7점): "${pref.reason}"`);
+        }
+      });
+    }
+
+    // Apply combined scores
+    score += (genreSum + actorSum + directorSum + customGenreScore + customActorScore);
+
+    // 6. Likes/Dislikes overrides
     if (likedContentIds.includes(content.id)) {
       score += 5;
     }
@@ -109,7 +232,7 @@ export function calculateRecommendations(
     return {
       content,
       score: finalScore,
-      matchedReasons: matchedReasons.slice(0, 3),
+      matchedReasons: matchedReasons.slice(0, 4), // Allow up to 4 reasons
       rank: 0
     };
   });
